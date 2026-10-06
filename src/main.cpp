@@ -33,6 +33,7 @@ struct Config {
     bool json = false;
     bool silent = false;
     bool no_color = false;
+    bool details = false;        // per-host detailed blocks instead of the summary table
     certkit::Options scan;
 
     // Enrichment stages.
@@ -67,6 +68,16 @@ const char* c(const char* code) { return g_color ? code : ""; }
 #define YELLOW c("\033[33m")
 #define CYAN c("\033[36m")
 #define DIM c("\033[2m")
+
+// A compact ASCII/Unicode progress bar, e.g. "[████████░░░░░░░░]".
+std::string progress_bar(size_t done, size_t total, int width = 20) {
+    double frac = total ? static_cast<double>(done) / static_cast<double>(total) : 1.0;
+    if (frac > 1.0) frac = 1.0;
+    int filled = static_cast<int>(frac * width + 0.5);
+    std::string bar;
+    for (int i = 0; i < width; ++i) bar += (i < filled) ? "█" : "░";
+    return bar;
+}
 
 void print_banner() {
     std::cerr << CYAN << BOLD
@@ -118,6 +129,7 @@ void print_usage(const char* prog) {
         "Output:\n"
         "  -o, --output <file>     Write results to file\n"
         "  -j, --json              JSON output (one object per host when enriching)\n"
+        "  -D, --details           Per-host detailed blocks instead of the summary table\n"
         "      --silent            Only print results (no banner/progress/summary)\n"
         "      --no-color          Disable colored output\n"
         "\n"
@@ -191,6 +203,8 @@ Config parse_args(int argc, char** argv) {
             cfg.json = true;
         } else if (a == "--silent") {
             cfg.silent = true;
+        } else if (a == "--details" || a == "--long" || a == "-D") {
+            cfg.details = true;
         } else if (a == "--no-color" || a == "-nc") {
             cfg.no_color = true;
         } else if (a == "-r" || a == "--resolve") {
@@ -368,8 +382,9 @@ int main(int argc, char** argv) {
         try {
             subs = certkit::scan(domain, cfg.scan, stats, [&](size_t done, size_t total) {
                 if (show_progress)
-                    std::cerr << "\r" << DIM << "      fetched " << done << "/" << total
-                              << " certificates" << RESET << "\033[K" << std::flush;
+                    std::cerr << "\r  " << CYAN << "[" << progress_bar(done, total) << "]" << RESET
+                              << DIM << " " << done << "/" << total << " certificates" << RESET
+                              << "\033[K" << std::flush;
             });
         } catch (const std::exception& e) {
             if (show_progress) std::cerr << "\r\033[K";
@@ -405,8 +420,8 @@ int main(int argc, char** argv) {
                           << " names\n";
             dnsbrute::Result br = dnsbrute::run(domain, bo, [&](size_t d, size_t t) {
                 if (show_progress)
-                    std::cerr << "\r" << DIM << "      tried " << d << "/" << t << " names" << RESET
-                              << "\033[K" << std::flush;
+                    std::cerr << "\r  " << CYAN << "[" << progress_bar(d, t) << "]" << RESET << DIM
+                              << " " << d << "/" << t << " names" << RESET << "\033[K" << std::flush;
             });
             if (show_progress) std::cerr << "\r\033[K";
             size_t before = subs.size();
@@ -451,8 +466,9 @@ int main(int argc, char** argv) {
         auto enrich_started = std::chrono::steady_clock::now();
         auto progress = [&](size_t done, size_t total) {
             if (show_progress)
-                std::cerr << "\r" << DIM << "      enriched " << done << "/" << total << " hosts"
-                          << RESET << "\033[K" << std::flush;
+                std::cerr << "\r  " << CYAN << "[" << progress_bar(done, total) << "]" << RESET
+                          << DIM << " " << done << "/" << total << " hosts" << RESET << "\033[K"
+                          << std::flush;
         };
 
         // Run the pipeline, then one extra pass over any new names harvested from
@@ -481,15 +497,21 @@ int main(int argc, char** argv) {
         std::sort(hosts.begin(), hosts.end(),
                   [](const model::Host& a, const model::Host& b) { return a.name < b.name; });
 
-        for (const auto& h : hosts) {
-            if (cfg.json) {
+        if (cfg.json) {
+            for (const auto& h : hosts) {
                 std::string line = report::json(h);
                 std::cout << line << "\n";
                 if (out_file.is_open()) out_file << line << "\n";
-            } else {
+            }
+        } else if (cfg.details) {
+            for (const auto& h : hosts) {
                 std::cout << report::human(h, g_color);
                 if (out_file.is_open()) out_file << report::human(h, false);
             }
+        } else {
+            // Default: a boxed summary table + findings section.
+            std::cout << report::table(hosts, g_color);
+            if (out_file.is_open()) out_file << report::table(hosts, false, 120);
         }
         std::cout.flush();
 

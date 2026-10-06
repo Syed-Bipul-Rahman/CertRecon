@@ -240,9 +240,11 @@ void dir_bruteforce(const model::Http& http, const Options& opts, std::vector<mo
                 default:
                     interesting = false;
             }
-            // Filter soft-404s: same status+size as the baseline non-existent path.
-            if (interesting && status == baseline_status && len == baseline_len &&
-                (status == 200 || status == 301 || status == 302))
+            // Filter soft-404s / blanket responses: any path whose status AND size
+            // match the baseline non-existent path is the host's generic answer
+            // (e.g. a Vercel 403 "Security Checkpoint" returned for every path).
+            if (interesting && baseline_status != 0 && status == baseline_status &&
+                len == baseline_len)
                 interesting = false;
 
             if (interesting) {

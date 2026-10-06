@@ -104,10 +104,15 @@ Applies to traffic sent to **targets** (not to the CT API, DNS, or ASN lookups).
 | `--delay <ms>` | Fixed pause after each target request |
 
 ### Output
+When enriching, results are printed as a **boxed summary table** (one row per host) followed
+by a severity-ordered **findings** section. Columns shrink/drop to fit the terminal width.
+Use `--details` for the full per-host block view, or `--json` for machine output.
+
 | Flag | Description |
 |------|-------------|
 | `-o, --output <file>` | Write results to a file (color is stripped from file output) |
 | `-j, --json` | JSON output (JSON lines, or one object per host when enriching) |
+| `-D, --details` | Per-host detailed blocks instead of the summary table |
 | `--silent` | Only print results (no banner, progress or summary) |
 | `--no-color` | Disable colors (also honors `NO_COLOR`) |
 

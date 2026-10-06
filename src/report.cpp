@@ -96,7 +96,8 @@ std::string human(const model::Host& h, bool color) {
     }
 
     const auto& in = h.intel;
-    if (!in.reverse_dns.empty() || !in.asn.empty() || !in.cdn.empty() || !in.favicon_hash.empty()) {
+    if (!in.reverse_dns.empty() || !in.asn.empty() || !in.cdn.empty() || !in.favicon_hash.empty() ||
+        !in.jarm.empty()) {
         o << "    " << p.green << "INTEL" << p.reset << " ";
         std::vector<std::string> bits;
         if (!in.reverse_dns.empty()) bits.push_back("PTR " + in.reverse_dns);
@@ -109,6 +110,8 @@ std::string human(const model::Host& h, bool color) {
         if (!in.cdn.empty()) bits.push_back("CDN: " + in.cdn);
         if (!in.favicon_hash.empty()) bits.push_back("favicon: " + in.favicon_hash);
         o << join(bits, "  ") << "\n";
+        if (!in.jarm.empty())
+            o << "          " << p.dim << "JARM: " << in.jarm << p.reset << "\n";
     }
 
     if (!h.dirs.empty()) {
@@ -197,7 +200,8 @@ std::string json(const model::Host& h) {
       << json::escape(h.intel.reverse_dns) << "\",\"asn\":\"" << json::escape(h.intel.asn)
       << "\",\"asn_org\":\"" << json::escape(h.intel.asn_org) << "\",\"country\":\""
       << json::escape(h.intel.country) << "\",\"cdn\":\"" << json::escape(h.intel.cdn)
-      << "\",\"favicon_hash\":\"" << json::escape(h.intel.favicon_hash) << "\"}";
+      << "\",\"favicon_hash\":\"" << json::escape(h.intel.favicon_hash) << "\",\"jarm\":\""
+      << json::escape(h.intel.jarm) << "\"}";
 
     o << ",\"findings\":[";
     for (size_t i = 0; i < h.findings.size(); ++i) {

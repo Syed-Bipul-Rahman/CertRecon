@@ -58,6 +58,7 @@ struct NetIntel {
     std::string country;        // 2-letter country code
     std::string cdn;            // detected CDN/WAF, if any
     std::string favicon_hash;   // mmh3 favicon hash (Shodan-compatible)
+    std::string jarm;           // JARM TLS fingerprint (62 hex chars)
 };
 
 struct Dir {

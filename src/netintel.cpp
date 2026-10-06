@@ -14,6 +14,7 @@
 #include <sstream>
 #include <vector>
 
+#include "jarm.hpp"
 #include "ratelimit.hpp"
 #include "version.hpp"
 
@@ -263,7 +264,15 @@ void gather(model::Host& host, bool allow_active, long timeout_secs) {
         cymru_asn(ip, host.intel);  // IPv4 only; harmless no-op for IPv6
     }
     host.intel.cdn = detect_cdn(host.dns.cnames, host.http);
-    if (allow_active) favicon_hash(host.http.url, host.intel, timeout_secs);
+    if (allow_active) {
+        favicon_hash(host.http.url, host.intel, timeout_secs);
+        // JARM fingerprints the TLS stack on 443. If a port scan ran and 443 was
+        // not open, skip it to avoid 10 pointless handshakes.
+        bool attempt = host.ports.empty();  // ports unknown -> attempt anyway
+        for (const auto& p : host.ports)
+            if (p.port == 443) { attempt = true; break; }
+        if (attempt) host.intel.jarm = jarm::fingerprint(host.name, 443, timeout_secs);
+    }
 }
 
 }  // namespace netintel

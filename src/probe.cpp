@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "ratelimit.hpp"
+#include "techfp.hpp"
 #include "version.hpp"
 
 namespace probe {
@@ -57,11 +58,20 @@ size_t header_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
         std::string key = lower(line.substr(0, colon));
         std::string val = line.substr(colon + 1);
         trim(val);
-        // On redirects curl replays headers; keep the latest value per key.
-        cap->headers.erase(std::remove_if(cap->headers.begin(), cap->headers.end(),
-                                          [&](const auto& kv) { return kv.first == key; }),
-                           cap->headers.end());
-        cap->headers.emplace_back(key, val);
+        if (key == "set-cookie") {
+            // A response sets many cookies; keep them all (joined) so cookie-name
+            // fingerprints can see every cookie, not just the last.
+            bool merged = false;
+            for (auto& kv : cap->headers)
+                if (kv.first == key) { kv.second += "; " + val; merged = true; break; }
+            if (!merged) cap->headers.emplace_back(key, val);
+        } else {
+            // On redirects curl replays headers; keep the latest value per key.
+            cap->headers.erase(std::remove_if(cap->headers.begin(), cap->headers.end(),
+                                              [&](const auto& kv) { return kv.first == key; }),
+                               cap->headers.end());
+            cap->headers.emplace_back(key, val);
+        }
         if (key == "server") cap->server = val;
         else if (key == "location") cap->location = val;
     }
@@ -96,34 +106,6 @@ std::string extract_title(const std::string& body) {
     }
     if (out.size() > 120) out = out.substr(0, 117) + "...";
     return out;
-}
-
-void detect_tech(const Capture& cap, long status, std::vector<std::string>& tech) {
-    auto add = [&](const std::string& t) {
-        if (std::find(tech.begin(), tech.end(), t) == tech.end()) tech.push_back(t);
-    };
-    std::string s = cap.server;
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (s.find("nginx") != std::string::npos) add("nginx");
-    if (s.find("apache") != std::string::npos) add("Apache");
-    if (s.find("cloudflare") != std::string::npos) add("Cloudflare");
-    if (s.find("microsoft-iis") != std::string::npos) add("IIS");
-    if (s.find("gunicorn") != std::string::npos) add("Gunicorn");
-    if (s.find("openresty") != std::string::npos) add("OpenResty");
-
-    std::string b = cap.body;
-    std::transform(b.begin(), b.end(), b.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (b.find("wp-content") != std::string::npos || b.find("wp-includes") != std::string::npos)
-        add("WordPress");
-    if (b.find("/_next/") != std::string::npos || b.find("__next_data__") != std::string::npos)
-        add("Next.js");
-    if (b.find("ng-version") != std::string::npos) add("Angular");
-    if (b.find("data-reactroot") != std::string::npos || b.find("react") != std::string::npos)
-        add("React");
-    if (b.find("drupal") != std::string::npos) add("Drupal");
-    (void)status;
 }
 
 // Performs one request. Returns true if a response was received.
@@ -197,7 +179,7 @@ void http_probe(const std::string& host, const Options& opts, model::Http& out) 
         out.content_length = static_cast<long>(cap.body.size());
         if (!opts.follow_redirects && !cap.location.empty()) out.redirect = cap.location;
         out.headers = cap.headers;
-        detect_tech(cap, status, out.tech);
+        out.tech = techfp::detect(cap.headers, cap.body);
         break;  // first scheme that answers wins
     }
     curl_easy_cleanup(c);

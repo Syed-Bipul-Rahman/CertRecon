@@ -9,10 +9,11 @@ subdomains **passively** from Certificate Transparency logs (via
 - **DNS** — A/AAAA resolution and CNAME chains
 - **Takeover** — dangling records & subdomain-takeover fingerprints
 - **Ports** — TCP connect scan + service/banner discovery
-- **HTTP** — status, title, server, tech detection
+- **HTTP** — status, title, server, Wappalyzer-style technology fingerprinting
 - **Content** — directory/content brute-forcing
 - **Host intel** — TLS certificate inspection (+ SAN harvesting of new subdomains), reverse
-  DNS, ASN/org/country (Team Cymru), CDN/WAF detection, Shodan-compatible favicon hash
+  DNS, ASN/org/country (Team Cymru), CDN/WAF detection, Shodan-compatible favicon hash,
+  JARM TLS fingerprint
 - **Vuln signals** — missing security headers, CORS misconfiguration, exposed `.git`/`.env`,
   unauthenticated Redis/Elasticsearch — each with a fix suggestion
 - **Safety** — global rate limiting, per-request delay, and a `--passive-only` mode that
@@ -127,9 +128,10 @@ The process exits non-zero if a scan fails outright (not for findings).
 For each subdomain with a CNAME, CertRecon:
 
 1. Flags a **dangling CNAME** if the CNAME target itself is `NXDOMAIN` (claimable).
-2. Matches the CNAME target against built-in fingerprints for ~16 services (GitHub Pages,
+2. Matches the CNAME target against built-in fingerprints for ~38 services (GitHub Pages,
    S3, Heroku, Azure, Fastly, Shopify, Netlify, Surge, Bitbucket, Ghost, Pantheon, Zendesk,
-   and more). For fingerprintable services it confirms by fetching the page and matching the
+   Webflow, Intercom, Canny, Campaign Monitor, Read the Docs, Strikingly, UserVoice, and many
+   more). For fingerprintable services it confirms by fetching the page and matching the
    provider's "unclaimed resource" signature before reporting a **HIGH** finding, with a
    remediation hint.
 
@@ -163,6 +165,20 @@ For each live host CertRecon gathers:
   Fastly, CloudFront, Azure, Imperva, GitHub Pages, Vercel, Netlify, and more).
 - **Favicon hash** — MurmurHash3 of the base64-encoded `/favicon.ico`, compatible with
   Shodan's `http.favicon.hash` for pivoting.
+- **JARM** — active TLS server fingerprint (10 crafted Client Hello probes, hashed to 62
+  hex chars). A faithful port of [Salesforce's JARM](https://github.com/salesforce/jarm),
+  so the output matches public JARM datasets (e.g. Shodan's `ssl.jarm`). Hosts on the same
+  TLS stack share a JARM, which is useful for clustering infrastructure and spotting
+  outliers. JARM is active (it connects to port 443); if a port scan ran and 443 is closed,
+  it is skipped.
+
+## Technology fingerprinting (`--http`)
+
+The HTTP probe runs a Wappalyzer-style signature engine over response headers, cookies and
+body markers to identify ~70 technologies — web servers (with versions from the `Server`
+header, e.g. `nginx/1.25.3`), CDNs, app frameworks (PHP, ASP.NET, Express, Laravel, Django,
+Rails, Spring, …), CMS/ecommerce (WordPress, Drupal, Magento, Shopify, …), JS frameworks
+(React, Angular, Vue, Next.js, …) and common dashboards (Grafana, Kibana, Jenkins, GitLab).
 
 ## Vulnerability signals (`--vuln`)
 
@@ -200,7 +216,10 @@ src/portscan.cpp   TCP connect scanner + banner grabbing / service ID
 src/probe.cpp      HTTP(S) probing and directory/content brute-forcing (libcurl)
 src/takeover.cpp   dangling-record & subdomain-takeover fingerprints
 src/tlsinfo.cpp    TLS certificate inspection + SAN harvest (libcurl CERTINFO)
-src/netintel.cpp   reverse DNS, ASN (Team Cymru), CDN/WAF, favicon hash
+src/netintel.cpp   reverse DNS, ASN (Team Cymru), CDN/WAF, favicon hash, JARM
+src/jarm.cpp       JARM TLS fingerprint (port of salesforce/jarm, BSD-3-Clause)
+src/techfp.cpp     Wappalyzer-style technology fingerprinting
+src/sha256.hpp     small dependency-free SHA-256 (used by JARM)
 src/vulncheck.cpp  security headers, CORS, exposed files, open services
 src/ratelimit.cpp  process-wide rate limiter for target traffic
 src/report.cpp     human-readable and JSON rendering

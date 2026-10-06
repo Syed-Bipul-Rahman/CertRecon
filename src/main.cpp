@@ -101,7 +101,7 @@ void print_usage(const char* prog) {
         "      --ports             TCP port scan + service/banner discovery\n"
         "      --http              HTTP(S) probe: status, title, server, tech\n"
         "      --dirs              Directory/content brute-force on live HTTP hosts\n"
-        "      --intel             Host intel: TLS cert, SAN harvest, rDNS, ASN, CDN, favicon\n"
+        "      --intel             Host intel: TLS cert, SAN harvest, rDNS, ASN, CDN, favicon, JARM\n"
         "      --vuln              Vuln signals: security headers, CORS, exposed files, services\n"
         "  -a, --all               Enable all of the above stages\n"
         "\n"

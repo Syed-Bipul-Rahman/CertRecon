@@ -257,26 +257,26 @@ std::string table(const std::vector<model::Host>& hosts, bool color, int max_wid
         return t;
     };
 
-    // Fit to width: first shrink the flexible text columns toward their minimum
-    // (truncating cells), and only drop a low-value column if even the minimums
-    // don't fit. HOST is never dropped.
-    const int flex[] = {C_HOST, C_TITLE, C_TECH, C_CDN};
-    auto shrink_to_fit = [&]() {
-        while (total() > target) {
+    // Fit to width. The HOST column is the identifier and must stay readable, so
+    // sacrifice the descriptive columns (CDN, TECH, TITLE) first: shrink them
+    // toward their minimum, then drop them outright, and only squeeze HOST (then
+    // IP) as a last resort on very narrow terminals.
+    auto shrink = [&](std::initializer_list<int> cols_list) {
+        for (;;) {
             int best = -1;
-            for (int fi : flex)
-                if (active[fi] && w[fi] > defs[fi].minw && (best < 0 || w[fi] > w[best])) best = fi;
-            if (best < 0) break;
+            for (int ci : cols_list)
+                if (active[ci] && w[ci] > defs[ci].minw && (best < 0 || w[ci] > w[best])) best = ci;
+            if (best < 0 || total() <= target) break;
             --w[best];
         }
     };
-    shrink_to_fit();
+    shrink({C_CDN, C_TECH, C_TITLE});
     const int drop_order[] = {C_CDN, C_TECH, C_TITLE};
     for (int di : drop_order) {
         if (total() <= target) break;
         active[di] = false;
-        shrink_to_fit();
     }
+    shrink({C_HOST, C_IP});  // last resort
 
     auto rule = [&](const char* l, const char* m, const char* rt) {
         o << p.dim << l;

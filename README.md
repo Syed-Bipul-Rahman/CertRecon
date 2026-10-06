@@ -4,6 +4,8 @@ Fast subdomain discovery and reconnaissance, written in C++17. CertRecon first e
 subdomains **passively** from Certificate Transparency logs (via
 [ct.certkit.io](https://ct.certkit.io)), then can **actively** enrich them:
 
+- **DNS brute-force** — expand discovery with a built-in wordlist, with wildcard-DNS
+  detection to filter false positives
 - **DNS** — A/AAAA resolution and CNAME chains
 - **Takeover** — dangling records & subdomain-takeover fingerprints
 - **Ports** — TCP connect scan + service/banner discovery
@@ -59,6 +61,14 @@ host; output then becomes a per-host report (or one JSON object per host with `-
 
 Domains are also read from stdin when piped. Input like `https://Example.com/path` is
 normalized to `example.com`.
+
+### Discovery
+Expands the subdomain set before any recon runs. DNS-only — no traffic to the target hosts.
+
+| Flag | Description |
+|------|-------------|
+| `--brute` | DNS brute-force with a built-in ~300-label wordlist + wildcard detection |
+| `--wordlist-dns <file>` | Custom DNS wordlist, one label per line (implies `--brute`) |
 
 ### Recon stages
 | Flag | Description |
@@ -123,6 +133,23 @@ For each subdomain with a CNAME, CertRecon:
    provider's "unclaimed resource" signature before reporting a **HIGH** finding, with a
    remediation hint.
 
+## DNS brute-force (`--brute`)
+
+Certificate Transparency can only reveal names that were issued a logged certificate. It cannot
+see hosts behind a wildcard certificate, internal/dev hosts with no public cert, or names not
+yet logged. `--brute` closes that gap by resolving `<label>.<domain>` for a built-in wordlist
+of ~300 common labels (override with `--wordlist-dns <file>`), merging anything that resolves
+into the subdomain set before recon runs.
+
+It is DNS-only, so it sends no traffic to the target web hosts and runs even under
+`--passive-only`.
+
+**Wildcard detection:** before brute-forcing, CertRecon resolves several random names under the
+domain. If they resolve, the domain uses wildcard DNS, and every brute candidate that resolves
+to the same wildcard answer is discarded as a false positive — only names with a distinct
+resolution are kept. (Tested against `traefik.me`, which wildcards everything to 127.0.0.1:
+all 304 candidates were correctly filtered.)
+
 ## Host intelligence (`--intel`)
 
 For each live host CertRecon gathers:
@@ -166,6 +193,7 @@ completely. If a page still fails, CertRecon prints a warning that the results m
 ```
 src/main.cpp       CLI, input/output, orchestration
 src/certkit.cpp    CT API client: pagination, threading, rate-limit handling, filtering
+src/dnsbrute.cpp   DNS brute-force discovery + wildcard detection
 src/pipeline.cpp   runs the recon stages across hosts concurrently
 src/resolver.cpp   DNS A/AAAA (getaddrinfo) + CNAME chain / NXDOMAIN (libresolv)
 src/portscan.cpp   TCP connect scanner + banner grabbing / service ID

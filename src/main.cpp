@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "certkit.hpp"
+#include "dnsbrute.hpp"
 #include "http.hpp"
 #include "json.hpp"
 #include "model.hpp"
@@ -44,7 +45,9 @@ struct Config {
     bool r_vuln = false;         // vuln signals: headers, CORS, exposed files, open services
     bool passive_only = false;   // send no traffic to targets
     std::string ports_spec;      // e.g. "80,443,8000-8100"
+    bool r_brute = false;        // DNS brute-force discovery stage
     std::string wordlist_file;   // custom dir-brute wordlist
+    std::string dns_wordlist_file;  // custom DNS brute-force wordlist
     int host_concurrency = 25;
     double rate = 0;             // max target requests/sec (0 = unlimited)
     int delay_ms = 0;            // fixed delay after each target request
@@ -88,6 +91,10 @@ void print_usage(const char* prog) {
         "  -l, --list <file>       File with one domain per line\n"
         "                          (domains are also read from stdin when piped)\n"
         "\n"
+        "Discovery (expands the subdomain set before recon):\n"
+        "      --brute             DNS brute-force with a built-in wordlist + wildcard detection\n"
+        "      --wordlist-dns <f>  Custom DNS brute-force wordlist (implies --brute)\n"
+        "\n"
         "Recon stages (run against the discovered subdomains):\n"
         "  -r, --resolve           Resolve A/AAAA/CNAME records\n"
         "      --takeover          Detect dangling records & subdomain takeovers\n"
@@ -126,6 +133,7 @@ void print_usage(const char* prog) {
         "\n"
         "Examples:\n"
         "  " << prog << " --scan google.com\n"
+        "  " << prog << " --scan example.com --brute\n"
         "  " << prog << " --scan example.com --all\n"
         "  " << prog << " --scan example.com --takeover --http\n"
         "  " << prog << " --scan example.com --intel --vuln\n"
@@ -195,6 +203,11 @@ Config parse_args(int argc, char** argv) {
             cfg.r_http = true;
         } else if (a == "--dirs" || a == "--dirbrute") {
             cfg.r_dirs = true;
+        } else if (a == "--brute" || a == "--dns-brute") {
+            cfg.r_brute = true;
+        } else if (a == "--wordlist-dns" || a == "--dns-wordlist") {
+            cfg.dns_wordlist_file = val();
+            cfg.r_brute = true;
         } else if (a == "--intel") {
             cfg.r_intel = true;
         } else if (a == "--vuln" || a == "--vulns") {
@@ -208,7 +221,7 @@ Config parse_args(int argc, char** argv) {
             cfg.delay_ms = static_cast<int>(parse_num(a, val(), 0));
         } else if (a == "-a" || a == "--all") {
             cfg.r_resolve = cfg.r_takeover = cfg.r_ports = cfg.r_http = cfg.r_dirs = true;
-            cfg.r_intel = cfg.r_vuln = true;
+            cfg.r_intel = cfg.r_vuln = cfg.r_brute = true;
         } else if (a == "-p" || a == "--port-list" || a == "--ports-list") {
             cfg.ports_spec = val();
             cfg.r_ports = true;
@@ -379,6 +392,36 @@ int main(int argc, char** argv) {
                 std::cerr << YELLOW << "[WRN] " << RESET << stats.failed_pages
                           << " page(s) failed after retries (" << stats.last_error
                           << "); results may be incomplete\n";
+        }
+
+        // Discovery: DNS brute-force expands the subdomain set before any recon.
+        if (cfg.r_brute) {
+            dnsbrute::Options bo;
+            if (!cfg.dns_wordlist_file.empty()) bo.wordlist = load_wordlist(cfg.dns_wordlist_file);
+            if (!cfg.silent)
+                std::cerr << CYAN << "[INF] " << RESET << "DNS brute-forcing "
+                          << (bo.wordlist.empty() ? dnsbrute::default_wordlist().size()
+                                                  : bo.wordlist.size())
+                          << " names\n";
+            dnsbrute::Result br = dnsbrute::run(domain, bo, [&](size_t d, size_t t) {
+                if (show_progress)
+                    std::cerr << "\r" << DIM << "      tried " << d << "/" << t << " names" << RESET
+                              << "\033[K" << std::flush;
+            });
+            if (show_progress) std::cerr << "\r\033[K";
+            size_t before = subs.size();
+            subs.insert(br.found.begin(), br.found.end());
+            size_t added = subs.size() - before;
+            if (!cfg.silent) {
+                std::cerr << GREEN << "[INF] " << RESET << "DNS brute-force resolved "
+                          << br.found.size() << " name(s), " << BOLD << "+" << added << RESET
+                          << " new";
+                if (br.wildcard)
+                    std::cerr << YELLOW << "  [wildcard DNS detected" << RESET
+                              << (br.wildcard_ips.empty() ? "" : ", filtering false positives")
+                              << YELLOW << "]" << RESET;
+                std::cerr << "\n";
+            }
         }
         grand_total += subs.size();
 

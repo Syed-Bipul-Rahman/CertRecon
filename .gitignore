@@ -1,0 +1,12 @@
+# Build artifacts
+build/
+certrecon
+*.o
+
+# macOS
+.DS_Store
+
+# Editor / tooling
+.claude/
+.vscode/
+.idea/
